@@ -1,0 +1,5 @@
+${AnsiColor.BRIGHT_RED}  _/\_  __/\__  _/\_
+${AnsiColor.BRIGHT_RED}_/    \/      \/    \   ${AnsiColor.BRIGHT_WHITE}${AnsiStyle.BOLD}Document Heartbeat
+${AnsiColor.BRIGHT_YELLOW}                        v${application.version}
+
+${AnsiColor.CYAN} :: Listening to what your files have to say ::${AnsiColor.DEFAULT}
