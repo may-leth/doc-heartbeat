@@ -1,5 +1,7 @@
-package com.may.soul.doc_heartbeat.dto;
+package com.may.soul.doc_heartbeat.mapper;
 
+import com.may.soul.doc_heartbeat.dto.DocumentResponse;
+import com.may.soul.doc_heartbeat.dto.IndexedDocument;
 import org.springframework.stereotype.Component;
 
 @Component
