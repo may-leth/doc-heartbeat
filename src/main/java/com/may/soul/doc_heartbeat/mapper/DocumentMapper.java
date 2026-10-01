@@ -13,4 +13,13 @@ public class DocumentMapper {
                 content.length()
         );
     }
+
+    public IndexedDocument toIndexedDocument(DocumentResponse response){
+        return new IndexedDocument(
+                response.fileName(),
+                response.mimeType(),
+                response.content(),
+                response.contentLength()
+        );
+    }
 }
