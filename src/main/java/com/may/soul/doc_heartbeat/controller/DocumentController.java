@@ -1,8 +1,9 @@
 package com.may.soul.doc_heartbeat.controller;
 
-import com.may.soul.doc_heartbeat.dto.DocumentMapper;
+import com.may.soul.doc_heartbeat.mapper.DocumentMapper;
 import com.may.soul.doc_heartbeat.dto.DocumentResponse;
 import com.may.soul.doc_heartbeat.service.DocumentService;
+import com.may.soul.doc_heartbeat.service.SearchIndexService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -29,20 +30,23 @@ public class DocumentController  {
 
     private final DocumentService documentService;
     private final DocumentMapper documentMapper;
+    private final SearchIndexService searchIndexService;
 
-    public DocumentController(DocumentService documentService, DocumentMapper documentMapper) {
+    public DocumentController(DocumentService documentService, DocumentMapper documentMapper, SearchIndexService searchIndexService) {
         this.documentService = documentService;
         this.documentMapper = documentMapper;
+        this.searchIndexService = searchIndexService;
     }
 
     @Operation(
             summary = "Upload a document and extract its content.",
-            description = "Analyze the file with Apache Tika: detect its MIME type and extract the plain text contained within it."
+            description = "Analyze the file with Apache Tika (MIME type detection and plain text extraction)"
+                    + "and indexes the result in Elasticsearch so it becomes searchable."
     )
     @ApiResponses( value = {
             @ApiResponse(responseCode = "200", description = "Document processed successfully"),
             @ApiResponse(responseCode = "400", description = "No file was sent in the request."),
-            @ApiResponse(responseCode = "500", description = "Error processing the document (unsupported format or corrupt file)")
+            @ApiResponse(responseCode = "500", description = "Processing or indexing failed (unsupported format, corrupted file or Elasticsearch unavailable)")
     })
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<DocumentResponse> uploadDocument(
@@ -65,6 +69,7 @@ public class DocumentController  {
         }
 
         DocumentResponse response = documentMapper.toResponse(file.getOriginalFilename(), mimeType, content);
+        searchIndexService.index(documentMapper.toIndexedDocument(response));
         return ResponseEntity.ok(response);
     }
 }

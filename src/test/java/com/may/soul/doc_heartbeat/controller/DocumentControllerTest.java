@@ -1,9 +1,10 @@
 package com.may.soul.doc_heartbeat.controller;
 
-import com.may.soul.doc_heartbeat.dto.DocumentMapper;
+import com.may.soul.doc_heartbeat.mapper.DocumentMapper;
 import com.may.soul.doc_heartbeat.dto.DocumentResponse;
 import com.may.soul.doc_heartbeat.exception.DocumentProcessingException;
 import com.may.soul.doc_heartbeat.service.DocumentService;
+import com.may.soul.doc_heartbeat.service.SearchIndexService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -14,6 +15,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -32,6 +34,9 @@ public class DocumentControllerTest {
 
     @MockitoBean
     private DocumentMapper documentMapper;
+
+    @MockitoBean
+    private SearchIndexService searchIndexService;
 
     @Test
     void uploadDocument_withValidTextFile_shouldReturnExtractedContent() throws Exception {
@@ -56,6 +61,8 @@ public class DocumentControllerTest {
                 .andExpect(jsonPath("$.mimeType").value(expectedMimeType))
                 .andExpect(jsonPath("$.content").value(expectedContent))
                 .andExpect(jsonPath("$.contentLength").value(36));
+
+        verify(searchIndexService).index(any());
     }
 
     @Test
