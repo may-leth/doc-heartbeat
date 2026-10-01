@@ -1,7 +1,11 @@
 package com.may.soul.doc_heartbeat.dto;
 
+import co.elastic.clients.elasticsearch.core.search.Hit;
 import com.may.soul.doc_heartbeat.mapper.DocumentMapper;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -29,5 +33,25 @@ DocumentMapperTest {
         assertEquals("application/pdf", response.mimeType());
         assertEquals("sample content", response.content());
         assertEquals(14, response.contentLength());
+    }
+
+    @Test
+    void toSearchResult_shouldBuildCorrectSearchResultResponse() {
+        IndexedDocument indexedDocument = new IndexedDocument("file.pdf", "application/pdf", "full content here", 18);
+
+        Hit<IndexedDocument> hit = Hit.of(h -> h
+                .index("documents")
+                .id("abc123")
+                .score(1.5)
+                .source(indexedDocument)
+                .highlight(Map.of("content", List.of("...matched <mark>content</mark>...")))
+        );
+
+        SearchResultResponse result = documentMapper.toSearchResult(hit);
+
+        assertEquals("file.pdf", result.fileName());
+        assertEquals("application/pdf", result.mimeType());
+        assertEquals("...matched <mark>content</mark>...", result.highlightedSnippet());
+        assertEquals(1.5, result.score());
     }
 }
