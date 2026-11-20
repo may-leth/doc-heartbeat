@@ -55,7 +55,7 @@ public class DocumentService {
             String mimeType = tika.detect(bufferedStream);
 
             log.debug("Tipo MIME detectado: {}", mimeType);
-            return mimeType != null ? mimeType : DEFAULT_MIME_TYPE;
+            return mimeType;
         } catch (IOException exception) {
             log.error("Error al detectar tipo MIME: {}", exception.getMessage(), exception);
             return DEFAULT_MIME_TYPE;
