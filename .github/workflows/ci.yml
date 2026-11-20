@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main, dev]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   build-and-test:
     name: Build & Test
@@ -22,7 +26,7 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Build and run tests
+      - name: Build, run tests and check coverage
         run: ./mvnw -B verify
 
       - name: Upload test reports
@@ -31,3 +35,21 @@ jobs:
         with:
           name: test-reports
           path: target/surefire-reports/
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: target/site/jacoco/
+
+      - name: Comment coverage on pull request
+        if: github.event_name == 'pull_request'
+        uses: madrapps/jacoco-report@v1.7.1
+        with:
+          paths: ${{ github.workspace }}/target/site/jacoco/jacoco.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          min-coverage-overall: 90
+          min-coverage-changed-files: 80
+          title: Code Coverage
+          update-comment: true
