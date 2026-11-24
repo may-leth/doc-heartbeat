@@ -12,6 +12,7 @@
 ![Elasticsearch](https://img.shields.io/badge/Elasticsearch_9-005571?style=for-the-badge&logo=elasticsearch&logoColor=white)
 ![Swagger](https://img.shields.io/badge/OpenAPI-85EA2D?style=for-the-badge&logo=swagger&logoColor=black)
 ![JUnit5](https://img.shields.io/badge/JUnit_5-25A162?style=for-the-badge&logo=junit5&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
 ![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)
 
 Upload any document (PDF, Word, EPUB, plain text…) and search inside its content in seconds, with the matching fragments highlighted.
@@ -87,7 +88,16 @@ flowchart LR
 | `service` | Text extraction (Tika) and indexing/search (Elasticsearch) |
 | `mapper` / `dto` | Immutable `record` DTOs, decoupling API responses from the index model |
 | `exception` | Centralized error handling with a consistent `ErrorResponse` |
-| `config` | Elasticsearch client configuration |
+| `config` | Elasticsearch client configuration (address injected from the environment) |
+
+At runtime, Docker Compose runs the application and Elasticsearch as two containers. The app only starts once Elasticsearch reports a healthy cluster, and indexed documents are stored in a persistent volume.
+
+```mermaid
+flowchart LR
+    User["Browser / curl"] -- ":8080" --> App["app container<br/>(Spring Boot)"]
+    App -- "http://elasticsearch:9200" --> ES[("elasticsearch container")]
+    ES --- Vol[("es-data volume")]
+```
 
 ## Tech stack
 
@@ -98,31 +108,46 @@ flowchart LR
 | Text extraction | Apache Tika 3.2.3 |
 | Search engine | Elasticsearch 9 with the official Java client |
 | API docs | springdoc-openapi (Swagger UI) |
-| Testing | JUnit 5, Mockito, MockMvc |
-| CI | GitHub Actions |
+| Testing | JUnit 5, Mockito, MockMvc, Testcontainers, JaCoCo |
+| Containers | Docker (multi-stage build), Docker Compose |
+| CI | GitHub Actions: tests, coverage quality gate and Docker image build |
 
 ## Getting started
 
+### Run everything with Docker (recommended)
+
+**Requirements:** Docker only. No Java or Elasticsearch installation needed.
+
+```bash
+docker compose up --build
+```
+
+Then open the interactive API docs at `http://localhost:8080/swagger-ui.html`, upload a document and search it.
+
+If port 8080 is busy, choose another one with the `APP_PORT` variable:
+
+```bash
+APP_PORT=8081 docker compose up --build
+```
+
+Stop with `docker compose down` (add `-v` to also delete the indexed documents).
+
+### Run locally for development
+
 **Requirements:** Java 21 and Docker.
 
-1. Start Elasticsearch:
+1. Start only Elasticsearch: `docker compose up elasticsearch`
+2. Run the application: `./mvnw spring-boot:run`
 
-   ```bash
-   docker run -d --name elasticsearch -p 9200:9200 \
-     -e "discovery.type=single-node" \
-     -e "xpack.security.enabled=false" \
-     docker.elastic.co/elasticsearch/elasticsearch:9.2.3
-   ```
+### Configuration
 
-2. Run the application:
+All settings can be overridden with environment variables, without changing the code:
 
-   ```bash
-   ./mvnw spring-boot:run
-   ```
-
-   To use another port, set the `SERVER_PORT` environment variable (e.g. `SERVER_PORT=8081`).
-
-3. Open the interactive API docs at `http://localhost:8080/swagger-ui.html`.
+| Variable | Default | Description |
+|---|---|---|
+| `ELASTICSEARCH_URI` | `http://localhost:9200` | Elasticsearch address used by the application |
+| `SERVER_PORT` | `8080` | Port the application listens on |
+| `APP_PORT` | `8080` | Host port exposed by Docker Compose |
 
 ## API endpoints
 
@@ -133,17 +158,24 @@ flowchart LR
 
 ## Testing strategy
 
-Every layer is tested in isolation, covering three kinds of scenarios:
+The test suite combines two levels:
+
+* **Unit tests** (JUnit 5, Mockito, MockMvc): each layer is tested in isolation, with fast feedback.
+* **Integration tests** (Testcontainers): a real Elasticsearch node is started in Docker to verify what a mock cannot, such as the query, the highlighting and the relevance ranking.
+
+Both levels cover three kinds of scenarios:
 
 * **Happy paths:** valid uploads and searches return the expected data.
-* **Sad paths:** Tika parsing errors and Elasticsearch failures are translated into clean `500` responses.
-* **Edge cases:** missing or blank queries (rejected with `400` *before* reaching Elasticsearch), empty files, searches with no results and queries with accents and special characters.
+* **Sad paths:** Tika parsing errors, unreadable files and Elasticsearch failures are translated into clean `500` responses.
+* **Edge cases:** missing or blank queries (rejected with `400` *before* reaching Elasticsearch), empty files, searches with no results, searches before any document is indexed, incomplete search hits and queries with accents and special characters.
+
+**Coverage** is measured with JaCoCo and enforced as a quality gate: the build fails if line coverage drops below 90% or branch coverage below 85%.
 
 ```bash
-./mvnw verify
+./mvnw verify   # requires Docker running for the integration tests
 ```
 
-Tests run automatically on every push and pull request through **GitHub Actions**.
+On every push and pull request, **GitHub Actions** runs the full suite, checks coverage, comments the coverage report on pull requests and builds the Docker image.
 
 ## Technical decisions
 
@@ -160,14 +192,26 @@ Request validation (e.g. a blank search query) uses **Bean Validation** (`@NotBl
 A `@RestControllerAdvice` (`GlobalExceptionHandler`) keeps controllers free of try/catch blocks and returns a consistent `ErrorResponse` for both validation (`400`) and processing (`500`) errors.
 
 ### "No results" is not an error
-A search with no matches returns `200` with an empty list instead of `404`: the request was valid and the search was performed successfully.
+A search with no matches returns `200` with an empty list instead of `404`: the request was valid and the search was performed successfully. The same applies when nothing has been indexed yet: the missing index is treated as "no documents", not as a server error.
+
+### Configuration from the environment
+Following the [Twelve-Factor App](https://12factor.net/config) principle, the Elasticsearch address is read from configuration (`ELASTICSEARCH_URI`) instead of being hard-coded. The same build runs on a laptop, inside Docker Compose and in integration tests, each pointing to a different Elasticsearch.
+
+### Lean and secure container image
+The `Dockerfile` uses a **multi-stage build**: a JDK image compiles the application and only the resulting JAR is copied into a smaller JRE image. Dependencies are downloaded in a separate layer, so rebuilding after a code change reuses the cache. The application runs as a **non-root user**.
+
+### Startup ordering with health checks
+Docker Compose waits for Elasticsearch to report a `green` or `yellow` cluster status before starting the application, instead of only waiting for the container to start.
+
+### Real dependencies in integration tests
+Mocks verify that the code calls Elasticsearch, but not that the query is correct. Integration tests run against a real Elasticsearch node with **Testcontainers**, using the same version as production.
 
 ## Roadmap
 
 - [x] **Phase 1:** Project setup & Tika integration.
 - [x] **Phase 2:** REST API for file upload, DTO/Mapper layer, centralized exception handling and Swagger documentation.
 - [x] **Phase 3:** Elasticsearch integration: indexing and full-text search with highlighting.
-- [ ] **Phase 4:** Dockerization of the complete pipeline (App + Elasticsearch) with Docker Compose.
+- [x] **Phase 4:** Dockerization (multi-stage image, Docker Compose with health checks) and integration tests with Testcontainers.
 - [ ] **Phase 5:** Continuous delivery: publish the Docker image automatically from GitHub Actions.
 
 ## Author
