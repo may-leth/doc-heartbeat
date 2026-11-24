@@ -96,4 +96,12 @@ class SearchIndexServiceIntegrationTest {
         }
         elasticsearchClient.indices().refresh(r -> r.index(INDEX_NAME));
     }
+
+    @Test
+    @DisplayName("Should return an empty list when no document has been indexed yet")
+    void search_beforeAnyDocumentIsIndexed_shouldReturnEmptyList() {
+        List<SearchResultResponse> results = searchIndexService.search("confidencialidad");
+
+        assertTrue(results.isEmpty());
+    }
 }

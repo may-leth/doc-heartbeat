@@ -1,6 +1,7 @@
 package com.may.soul.doc_heartbeat.service;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.ElasticsearchException;
 import co.elastic.clients.elasticsearch.core.IndexResponse;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.HighlightField;
@@ -23,6 +24,7 @@ public class SearchIndexService {
 
     private final ElasticsearchClient elasticsearchClient;
     private final DocumentMapper documentMapper;
+    private static final String INDEX_NOT_FOUND = "index_not_found_exception";
 
     public SearchIndexService(ElasticsearchClient elasticsearchClient, DocumentMapper documentMapper) {
         this.elasticsearchClient = elasticsearchClient;
@@ -51,9 +53,9 @@ public class SearchIndexService {
             );
 
             SearchResponse<IndexedDocument> response = elasticsearchClient.search(s -> s
-                    .index(INDEX_NAME)
-                    .query(q -> q.match(m -> m.field("content").query(query)))
-                    .highlight(h -> h.fields(List.of(NamedValue.of("content", highlightField)))),
+                            .index(INDEX_NAME)
+                            .query(q -> q.match(m -> m.field("content").query(query)))
+                            .highlight(h -> h.fields(List.of(NamedValue.of("content", highlightField)))),
                     IndexedDocument.class
             );
 
@@ -61,9 +63,17 @@ public class SearchIndexService {
                     .map(documentMapper::toSearchResult)
                     .toList();
 
-        } catch (IOException exception){
-            log.error("Error al buscar documentos en Elasticsearch: {}",  exception.getMessage(), exception);
-            throw  new DocumentProcessingException("No se pudo realizar la búsqueda", exception);
+        } catch (ElasticsearchException exception) {
+            if (INDEX_NOT_FOUND.equals(exception.error().type())) {
+                log.info("El índice '{}' aún no existe: todavía no hay documentos indexados", INDEX_NAME);
+                return List.of();
+            }
+            log.error("Error de Elasticsearch al buscar documentos: {}", exception.getMessage(), exception);
+            throw new DocumentProcessingException("No se pudo realizar la búsqueda", exception);
+
+        } catch (IOException exception) {
+            log.error("Error al buscar documentos en Elasticsearch: {}", exception.getMessage(), exception);
+            throw new DocumentProcessingException("No se pudo realizar la búsqueda", exception);
         }
     }
 }

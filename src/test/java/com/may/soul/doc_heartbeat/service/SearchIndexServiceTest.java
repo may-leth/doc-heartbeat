@@ -1,6 +1,8 @@
 package com.may.soul.doc_heartbeat.service;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.ElasticsearchException;
+import co.elastic.clients.elasticsearch._types.ErrorResponse;
 import co.elastic.clients.elasticsearch.core.IndexResponse;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
@@ -138,5 +140,25 @@ public class SearchIndexServiceTest {
         List<SearchResultResponse> results = searchIndexService.search("palabra_inexistente");
 
         assertEquals(0, results.size());
+    }
+
+    @Test
+    void search_whenElasticsearchReturnsOtherError_shouldThrowDocumentProcessingException() throws IOException {
+        SearchIndexService searchIndexService = new SearchIndexService(elasticsearchClient, documentMapper);
+
+        ElasticsearchException elasticsearchError = new ElasticsearchException("search",
+                ErrorResponse.of(r -> r
+                        .status(500)
+                        .error(e -> e.type("search_phase_execution_exception").reason("Simulated failure"))));
+
+        when(elasticsearchClient.<IndexedDocument>search(any(Function.class), eq(IndexedDocument.class)))
+                .thenThrow(elasticsearchError);
+
+        DocumentProcessingException exception = assertThrows(
+                DocumentProcessingException.class,
+                () -> searchIndexService.search("confidencialidad")
+        );
+
+        assertEquals("No se pudo realizar la búsqueda", exception.getMessage());
     }
 }
