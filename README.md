@@ -2,7 +2,8 @@
 
 > **"Listening to what your files have to say."**
 
-[![CI](https://github.com/may-leth/doc-heartbeat/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/may-leth/doc-heartbeat/actions/workflows/ci.yml)
+[![CI/CD](https://github.com/may-leth/doc-heartbeat/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/may-leth/doc-heartbeat/actions/workflows/ci.yml)
+[![Docker image](https://img.shields.io/badge/ghcr.io-doc--heartbeat-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/may-leth/doc-heartbeat/pkgs/container/doc-heartbeat)
 [![Last commit](https://img.shields.io/github/last-commit/may-leth/doc-heartbeat/dev?style=flat-square)](https://github.com/may-leth/doc-heartbeat/commits/dev)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-FE5196?style=flat-square&logo=conventionalcommits&logoColor=white)](https://www.conventionalcommits.org)
 
@@ -110,11 +111,37 @@ flowchart LR
 | API docs | springdoc-openapi (Swagger UI) |
 | Testing | JUnit 5, Mockito, MockMvc, Testcontainers, JaCoCo |
 | Containers | Docker (multi-stage build), Docker Compose |
-| CI | GitHub Actions: tests, coverage quality gate and Docker image build |
+| CI/CD | GitHub Actions: tests, coverage quality gate, Docker image build and publication to GitHub Container Registry |
 
 ## Getting started
 
-### Run everything with Docker (recommended)
+### Run the published image (fastest)
+
+Every change merged into `main` publishes a ready-to-run image to GitHub Container Registry. With Docker installed, no clone or build is needed:
+
+```bash
+docker network create doc-heartbeat
+
+docker run -d --name elasticsearch --network doc-heartbeat \
+  -e "discovery.type=single-node" -e "xpack.security.enabled=false" \
+  -e "ES_JAVA_OPTS=-Xms512m -Xmx512m" \
+  docker.elastic.co/elasticsearch/elasticsearch:9.2.3
+
+docker run -d --name doc-heartbeat --network doc-heartbeat -p 8080:8080 \
+  -e "ELASTICSEARCH_URI=http://elasticsearch:9200" \
+  ghcr.io/may-leth/doc-heartbeat:latest
+```
+
+Wait a few seconds for Elasticsearch to start, then open `http://localhost:8080/swagger-ui.html`.
+
+| Image tag | Content |
+|---|---|
+| `latest` | Latest stable version (`main`) |
+| `1.0.0`, ... | A specific release |
+| `dev` | Latest development version |
+| `sha-<commit>` | The exact build of a given commit |
+
+### Run everything with Docker Compose (from source)
 
 **Requirements:** Docker only. No Java or Elasticsearch installation needed.
 
@@ -175,7 +202,7 @@ Both levels cover three kinds of scenarios:
 ./mvnw verify   # requires Docker running for the integration tests
 ```
 
-On every push and pull request, **GitHub Actions** runs the full suite, checks coverage, comments the coverage report on pull requests and builds the Docker image.
+On every pull request, **GitHub Actions** runs the full suite, checks coverage, comments the coverage report and builds the Docker image. Changes merged into `dev` or `main` are then published as Docker images.
 
 ## Technical decisions
 
@@ -203,6 +230,9 @@ The `Dockerfile` uses a **multi-stage build**: a JDK image compiles the applicat
 ### Startup ordering with health checks
 Docker Compose waits for Elasticsearch to report a `green` or `yellow` cluster status before starting the application, instead of only waiting for the container to start.
 
+### Continuous delivery with traceable images
+The CI/CD pipeline builds the Docker image on every pull request to validate it, but only **publishes** it once the change is merged or a version is tagged, and always after the tests pass. Each image is tagged with its commit SHA, so any running version can be traced back to the exact code it was built from. Authentication uses the short-lived `GITHUB_TOKEN`, with no stored credentials, and only the publishing job has write access to packages.
+
 ### Real dependencies in integration tests
 Mocks verify that the code calls Elasticsearch, but not that the query is correct. Integration tests run against a real Elasticsearch node with **Testcontainers**, using the same version as production.
 
@@ -212,7 +242,7 @@ Mocks verify that the code calls Elasticsearch, but not that the query is correc
 - [x] **Phase 2:** REST API for file upload, DTO/Mapper layer, centralized exception handling and Swagger documentation.
 - [x] **Phase 3:** Elasticsearch integration: indexing and full-text search with highlighting.
 - [x] **Phase 4:** Dockerization (multi-stage image, Docker Compose with health checks) and integration tests with Testcontainers.
-- [ ] **Phase 5:** Continuous delivery: publish the Docker image automatically from GitHub Actions.
+- [x] **Phase 5:** Continuous delivery: Docker images published automatically to GitHub Container Registry.
 
 ## Author
 
